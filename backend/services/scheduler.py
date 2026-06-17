@@ -159,14 +159,18 @@ def dispatch(db: Session, bundle: TestBundleRequest) -> Optional[str]:
     chosen = min(survivors, key=lambda h: (_workload_score(h), h.host_id))
     target_queue = queue_name_for(chosen.host_id)
 
-    from worker.tasks import run_test_bundle  # lazy import to avoid cycle
+    # Enqueue by name via the backend's thin Celery client so we never import the
+    # worker package (its Docker/psutil deps aren't in the backend image).
+    from backend.celery_client import celery_client
 
     # Reserve optimistically, then dispatch. If dispatch fails, undo the reserve
     # so we don't leak capacity until the next heartbeat reconciles it.
     chosen.active_containers += 1
     try:
         db.commit()
-        run_test_bundle.apply_async(args=[bundle.to_dict()], queue=target_queue)
+        celery_client.send_task(
+            "worker.run_test_bundle", args=[bundle.to_dict()], queue=target_queue
+        )
     except Exception:
         db.rollback()
         fresh = db.get(WorkerHost, chosen.id)

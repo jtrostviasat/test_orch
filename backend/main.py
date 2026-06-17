@@ -12,7 +12,9 @@ queue, then streams replies back to the browser as they arrive, emitting a soft
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
+from contextlib import asynccontextmanager
 
 import aio_pika
 from fastapi import Depends, FastAPI, Form, Request, WebSocket, WebSocketDisconnect
@@ -21,14 +23,72 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from backend.auth import LDAPAuthError, authenticate_ldap, resolve_session
+from backend.celery_client import celery_client
 from backend.config import get_settings
 from backend.database import SessionLocal, get_db, init_db
 from backend.models import TestExecution, User, WorkerHost
-from backend.services.scheduler import queue_name_for
+from backend.services.maintenance import run_maintenance_sweep
+from backend.services.scheduler import dispatch, queue_name_for
 from backend.services.status_render import render_sentinel, render_status_row
+from shared.schemas import TestBundleRequest, TestStatus
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
-app = FastAPI(title="test_orch")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Application lifespan: init the schema and run the central resiliency sweep.
+
+    The sweep loop is the worker-independent half of spec §D — it marks hosts
+    whose heartbeat has gone stale as offline and fails any runs orphaned on
+    them, from the always-on backend rather than the (possibly dead) worker.
+
+    Args:
+        app: The FastAPI application (unused; required by the lifespan protocol).
+
+    Yields:
+        None. Control returns to the framework for the lifetime of the app; the
+        background sweep task is cancelled cleanly on shutdown.
+    """
+    init_db()
+    stop = asyncio.Event()
+    sweep_task = asyncio.create_task(_maintenance_loop(stop))
+    try:
+        yield
+    finally:
+        stop.set()
+        sweep_task.cancel()
+        try:
+            await sweep_task
+        except asyncio.CancelledError:
+            pass
+
+
+async def _maintenance_loop(stop: asyncio.Event) -> None:
+    """
+    Periodically run the (blocking) maintenance sweep off the event loop.
+
+    Args:
+        stop: Event signalled on shutdown to end the loop promptly.
+
+    Returns:
+        None. Runs until ``stop`` is set; sweep errors are logged, not fatal.
+    """
+    interval = settings.maintenance_sweep_seconds
+    while not stop.is_set():
+        try:
+            await asyncio.to_thread(run_maintenance_sweep)
+        except Exception:  # noqa: BLE001 - a sweep failure must not kill the loop
+            logger.exception("maintenance sweep failed")
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=interval)
+        except asyncio.TimeoutError:
+            continue
+
+
+app = FastAPI(title="test_orch", lifespan=lifespan)
 templates = Jinja2Templates(directory="backend/templates")
 
 
@@ -90,20 +150,6 @@ def _escape(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-@app.on_event("startup")
-def _startup() -> None:
-    """
-    Initialize the database schema on application startup.
-
-    Args:
-        None.
-
-    Returns:
-        None.
-    """
-    init_db()
-
-
 # --------------------------------------------------------------------------- #
 # Auth dependency
 # --------------------------------------------------------------------------- #
@@ -152,6 +198,85 @@ def dashboard(request: Request, user: User | None = Depends(current_user)) -> HT
     return templates.TemplateResponse(
         "dashboard.html", {"request": request, "user": user, "runs": runs}
     )
+
+
+@app.post("/tests")
+def submit_test(
+    runner_type: str = Form(...),
+    framework_image: str = Form(...),
+    target_dut: str = Form(""),
+    required_hw_tags: str = Form(""),
+    requires_emulation: bool = Form(False),
+    user: User | None = Depends(current_user),
+):
+    """
+    Create and dispatch a test bundle for the logged-in engineer.
+
+    Builds a validated :class:`TestBundleRequest`, persists a ``PENDING``
+    ``TestExecution`` (the audit record), then runs the filter-and-rank
+    :func:`dispatch`. The row is advanced to ``DISPATCHED`` with the chosen host,
+    or marked ``FAILED`` if no host currently qualifies.
+
+    Args:
+        runner_type: Registered runner key (e.g. ``"pytest"`` or ``"robot"``).
+        framework_image: Fully-qualified container image for the run.
+        target_dut: Optional device-under-test identifier passed to the runner.
+        required_hw_tags: Comma-separated hardware tags the host must carry.
+        requires_emulation: Whether the host must support emulation.
+        user: The resolved current user (audit identity).
+
+    Returns:
+        Response: Redirect to the dashboard, or to ``/login`` if unauthenticated.
+    """
+    if user is None:
+        return RedirectResponse("/login", status_code=302)
+
+    test_id = uuid.uuid4().hex
+    tags = [t.strip() for t in required_hw_tags.split(",") if t.strip()]
+    runner_variables = {"target_dut": target_dut} if target_dut else {}
+
+    try:
+        bundle = TestBundleRequest(
+            test_id=test_id,
+            user_id=user.id,
+            runner_type=runner_type,
+            framework_image=framework_image,
+            required_hw_tags=tags,
+            requires_emulation=requires_emulation,
+            runner_variables=runner_variables,
+        )
+    except (TypeError, ValueError):
+        # Malformed input — bounce back to the dashboard rather than 500.
+        return RedirectResponse("/", status_code=302)
+
+    db = SessionLocal()
+    try:
+        execution = TestExecution(
+            test_id=test_id,
+            user_id=user.id,
+            runner_type=runner_type,
+            framework_image=framework_image,
+            status=TestStatus.PENDING.value,
+        )
+        db.add(execution)
+        db.commit()
+
+        try:
+            chosen = dispatch(db, bundle)
+        except Exception:  # noqa: BLE001 - broker/DB error must not 500 the form
+            logger.exception("dispatch failed for test %s", test_id)
+            chosen = None
+
+        if chosen is None:
+            execution.status = TestStatus.FAILED.value
+        else:
+            execution.status = TestStatus.DISPATCHED.value
+            execution.target_host_id = chosen
+        db.commit()
+    finally:
+        db.close()
+
+    return RedirectResponse("/", status_code=302)
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -484,11 +609,11 @@ async def ws_admin(websocket: WebSocket):
                 )
             )
 
-            from worker.tasks import report_status
-
             for host_id in host_ids:
-                report_status.apply_async(
-                    args=[correlation_id], queue=queue_name_for(host_id)
+                celery_client.send_task(
+                    "worker.report_status",
+                    args=[correlation_id],
+                    queue=queue_name_for(host_id),
                 )
 
             sentinel_task = asyncio.create_task(

@@ -1,6 +1,35 @@
 {% extends "base.html" %}
 {% block title %}Dashboard - test_orch{% endblock %}
 {% block content %}
+  <h1>Submit a Test</h1>
+  <div class="panel">
+    <form method="post" action="/tests">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; max-width:720px;">
+        <label>Runner
+          <select name="runner_type" required style="width:100%; padding:6px;">
+            <option value="pytest">pytest</option>
+            <option value="robot">robot</option>
+          </select>
+        </label>
+        <label>Framework image
+          <input name="framework_image" required placeholder="myrepo/pytest-runner:latest"
+                 style="width:100%; padding:6px;" />
+        </label>
+        <label>Target DUT
+          <input name="target_dut" placeholder="(optional)" style="width:100%; padding:6px;" />
+        </label>
+        <label>Required hardware tags
+          <input name="required_hw_tags" placeholder="DUT_TYPE_A,DUT_TYPE_B"
+                 style="width:100%; padding:6px;" />
+        </label>
+      </div>
+      <label style="display:block; margin:12px 0;">
+        <input type="checkbox" name="requires_emulation" value="true" /> Requires emulation
+      </label>
+      <button type="submit">Dispatch Test</button>
+    </form>
+  </div>
+
   <h1>My Test Runs</h1>
   <div class="panel">
     <table>

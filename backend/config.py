@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     # Grace period (seconds) before the admin host-status poll emits its soft
     # "polling complete (N of M)" sentinel. Late replies can still upgrade it.
     host_poll_grace_seconds: float = 4.0
+    # Resiliency (spec §D): a host is considered dead if no heartbeat arrives
+    # within this window. The heartbeat cadence is 30s, so 90s = 3 missed beats.
+    heartbeat_timeout_seconds: float = 90.0
+    # How often the backend's central sweep marks dead hosts offline and fails
+    # any runs orphaned on them.
+    maintenance_sweep_seconds: float = 30.0
 
     # --- PostgreSQL (central state DB) ---
     # You can either provide a full DATABASE_URL, or the discrete parts below.
