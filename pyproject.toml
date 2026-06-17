@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "test_orch"
+version = "0.1.0"
+description = "Multi-Tenant Embedded Test Automation & Orchestration System"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+# Make the repo root importable so `import shared`, `import backend`, `import worker` work.
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+# B011: we intentionally use asserts for internal invariants (not at boundaries).
+ignore = ["B011"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests use asserts everywhere by design.
+"tests/*" = ["B011", "S101"]

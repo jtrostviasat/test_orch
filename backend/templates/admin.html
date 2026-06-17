@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Admin - test_orch{% endblock %}
+{% block content %}
+  <h1>Admin</h1>
+
+  <div class="panel">
+    <h2>Worker Host Inventory</h2>
+    <p style="color:#8b949e; font-size:13px;">Last-known values from periodic heartbeats.</p>
+    <table>
+      <thead>
+        <tr><th>Host ID</th><th>Online</th><th>Containers</th><th>CPU %</th>
+            <th>Tags</th><th>Emulation</th><th>Last heartbeat</th></tr>
+      </thead>
+      <tbody>
+        {% for h in hosts %}
+        <tr>
+          <td>{{ h.host_id }}</td>
+          <td>
+            {% if h.is_online %}<span class="pill on">online</span>
+            {% else %}<span class="pill off">offline</span>{% endif %}
+          </td>
+          <td>{{ h.active_containers }} / {{ h.max_containers }}</td>
+          <td>{{ "%.1f"|format(h.cpu_utilization) }}</td>
+          <td>{{ h.hardware_tags or "-" }}</td>
+          <td>{{ "yes" if h.supports_emulation else "no" }}</td>
+          <td>{{ h.last_heartbeat or "never" }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" style="color:#8b949e">No hosts registered.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!--
+    Live Host Status.
+    The form connects to /ws/admin over a WebSocket (htmx ws extension). Clicking
+    the button sends a frame; the server fans a status request out to every host
+    and streams replies back as out-of-band <tbody> row appends. The sentinel
+    div is updated out-of-band after the grace period.
+  -->
+  <div class="panel" hx-ext="ws" ws-connect="/ws/admin">
+    <h2>Live Host Status</h2>
+    <form ws-send>
+      <button type="submit">Get Host Status</button>
+    </form>
+
+    <div id="poll-sentinel" style="margin:8px 0;"></div>
+
+    <table>
+      <thead>
+        <tr><th>Host ID</th><th>CPU %</th><th>RAM avail (MB)</th>
+            <th>Disk avail (GB)</th><th>Active Users</th></tr>
+      </thead>
+      <tbody id="host-status-results">
+        <tr><td colspan="5" style="color:#8b949e">Click "Get Host Status" to poll runners.</td></tr>
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

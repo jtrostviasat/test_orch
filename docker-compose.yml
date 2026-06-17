@@ -1,0 +1,98 @@
+# Single-host bring-up of the entire stack PLUS one worker (worker_host_01).
+# `docker compose up --build` starts everything you need to exercise the
+# "Get Host Status" button end-to-end. See SETUP_AND_TESTING.md.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-test_orch}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-test_orch}
+      POSTGRES_DB: ${POSTGRES_DB:-test_orch}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-test_orch}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    ports:
+      - "5672:5672"
+      - "15672:15672"   # management UI
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  influxdb:
+    image: influxdb:2.7
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: adminpassword
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUX_ORG:-test_orch}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX_BUCKET:-test_logs}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN:-changeme-influx-token}
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdata:/var/lib/influxdb2
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      RABBITMQ_HOST: rabbitmq
+      INFLUX_URL: http://influxdb:8086
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+
+  worker_host_01:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    env_file: .env
+    environment:
+      WORKER_HOST_ID: worker_host_01
+      POSTGRES_HOST: postgres
+      RABBITMQ_HOST: rabbitmq
+      INFLUX_URL: http://influxdb:8086
+      DOCKER_HOST: unix:///run/user/1000/docker.sock
+    volumes:
+      # Bind-mount the rootless Docker socket so the worker can launch test
+      # containers. Adjust the host path to match your UID's socket.
+      - ${DOCKER_HOST_SOCK:-/run/user/1000/docker.sock}:/run/user/1000/docker.sock
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  influxdata:

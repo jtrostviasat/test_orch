@@ -1,0 +1,1 @@
+"""Service-layer logic: scheduler, InfluxDB, Quali, and status rendering."""

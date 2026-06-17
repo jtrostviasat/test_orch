@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}test_orch{% endblock %}</title>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12/dist/ext/ws.js"></script>
+  <style>
+    :root { --bg:#0d1117; --panel:#161b22; --border:#30363d; --fg:#c9d1d9; --accent:#2f81f7; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: ui-sans-serif, system-ui, sans-serif;
+           background:var(--bg); color:var(--fg); }
+    header { padding:12px 20px; border-bottom:1px solid var(--border);
+             display:flex; justify-content:space-between; align-items:center; }
+    header a { color:var(--accent); text-decoration:none; margin-left:16px; }
+    main { padding:20px; max-width:1100px; margin:0 auto; }
+    h1, h2 { font-weight:600; }
+    table { width:100%; border-collapse:collapse; margin:12px 0; }
+    th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border); }
+    th { color:#8b949e; font-weight:600; }
+    button { background:var(--accent); color:#fff; border:0; border-radius:6px;
+             padding:8px 14px; cursor:pointer; font-size:14px; }
+    button:hover { filter:brightness(1.1); }
+    .panel { background:var(--panel); border:1px solid var(--border);
+             border-radius:8px; padding:16px; margin-bottom:20px; }
+    .sentinel-ok   { color:#3fb950; }
+    .sentinel-warn { color:#d29922; }
+    .sentinel-empty{ color:#8b949e; }
+    #terminal { background:#010409; border:1px solid var(--border); border-radius:6px;
+                padding:10px; height:360px; overflow:auto; font-family: ui-monospace, monospace;
+                font-size:13px; white-space:pre-wrap; }
+    .log-line { line-height:1.4; }
+    .pill { padding:2px 8px; border-radius:10px; font-size:12px; }
+    .on  { background:#23863633; color:#3fb950; }
+    .off { background:#f8514933; color:#f85149; }
+  </style>
+</head>
+<body>
+  <header>
+    <div><strong>test_orch</strong></div>
+    <nav>
+      <a href="/">Dashboard</a>
+      <a href="/admin">Admin</a>
+      {% if user %}<span style="color:#8b949e">{{ user.display_name or user.username }}</span>{% endif %}
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

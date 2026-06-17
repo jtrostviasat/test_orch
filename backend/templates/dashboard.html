@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - test_orch{% endblock %}
+{% block content %}
+  <h1>My Test Runs</h1>
+  <div class="panel">
+    <table>
+      <thead>
+        <tr><th>Test ID</th><th>Runner</th><th>Status</th><th>Host</th><th>Artifact</th></tr>
+      </thead>
+      <tbody>
+        {% for run in runs %}
+        <tr>
+          <td>{{ run.test_id }}</td>
+          <td>{{ run.runner_type }}</td>
+          <td>{{ run.status }}</td>
+          <td>{{ run.target_host_id or "-" }}</td>
+          <td>
+            {% if run.artifact_url %}<a href="{{ run.artifact_url }}">download</a>
+            {% else %}-{% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" style="color:#8b949e">No runs yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}
