@@ -1,6 +1,7 @@
 """Host statistics collection (psutil-based), with input + return validation."""
 from __future__ import annotations
 
+import os
 import shutil
 from dataclasses import asdict, dataclass
 from typing import Any, Dict
@@ -89,6 +90,13 @@ def collect_host_stats(host_id: str, disk_path: str = "/") -> HostStats:
     vm = psutil.virtual_memory()
     ram_available_mb = vm.available / (1024 * 1024)
     ram_total_mb = vm.total / (1024 * 1024)
+
+    # Create disk_path if it doesn't exist so metrics can be collected
+    if not os.path.exists(disk_path):
+        try:
+            os.makedirs(disk_path, exist_ok=True)
+        except OSError:
+            disk_path = "/"
 
     usage = shutil.disk_usage(disk_path)
     disk_available_gb = usage.free / (1024 ** 3)
