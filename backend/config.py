@@ -21,8 +21,9 @@ class Settings(BaseSettings):
     app_env: str = "development"
     secret_key: str = "change-me"
     worker_host_id: str = "worker_host_01"
-    # Grace period (seconds) before the admin host-status poll emits its soft
-    # "polling complete (N of M)" sentinel. Late replies can still upgrade it.
+    # Grace period (seconds) for the admin host-status poll. The sentinel is
+    # emitted exactly once: "all responded" if every host replies before this
+    # deadline, otherwise a partial "N of M" when the deadline elapses.
     host_poll_grace_seconds: float = 4.0
     # Resiliency (spec §D): a host is considered dead if no heartbeat arrives
     # within this window. The heartbeat cadence is 30s, so 90s = 3 missed beats.

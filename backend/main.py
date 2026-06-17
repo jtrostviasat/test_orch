@@ -475,29 +475,29 @@ class _PollState:
 
     async def emit_sentinel(self, *, final: bool) -> None:
         """
-        Send the sentinel fragment, idempotently latching the complete state.
+        Send the sentinel fragment exactly once, latching on the first emission.
 
         Args:
-            final: ``True`` when called because the full set responded; latches
-                so neither the timer nor a later straggler re-emits.
+            final: Advisory flag describing the caller's intent (``True`` from the
+                completing reply, ``False`` from the grace timer). It does NOT
+                gate latching — see the note.
 
         Returns:
-            None. No-op once a completion sentinel has been latched.
+            None. No-op once a sentinel has already been emitted.
 
         Note:
-            Latching is decided strictly inside the lock using the live
-            ``received``/``total`` so the timer's partial sentinel and a
-            straggler's completion cannot double-emit under any interleaving.
+            The latch is set on the FIRST emission regardless of ``final``, so the
+            grace-timer's partial sentinel and a completing straggler can never
+            both render. Whichever fires first wins under any interleaving; the
+            other observes ``_completed`` inside the lock and returns.
         """
         async with self._lock:
             if self._completed:
                 return
-            is_complete = bool(self.total) and self.received >= self.total
             await self._ws.send_text(
                 render_sentinel(received=self.received, total=self.total)
             )
-            if final or is_complete:
-                self._completed = True
+            self._completed = True
 
 
 async def _emit_sentinel_after_grace(state, grace, is_current):
