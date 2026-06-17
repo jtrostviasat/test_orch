@@ -223,9 +223,17 @@ def run_test_bundle(self, bundle: Dict[str, Any]) -> str:
         exit_code = container.wait().get("StatusCode", 1)
 
         artifact_url = None
+        artifact_urls = []
         for fname in os.listdir(config_dir):
             if fname.endswith((".log", ".dmp", ".core", ".tar.gz")):
-                artifact_url = upload_artifact(test_id, os.path.join(config_dir, fname))
+                try:
+                    url = upload_artifact(test_id, os.path.join(config_dir, fname))
+                    artifact_urls.append(url)
+                except Exception:
+                    logger.exception("Failed to upload artifact %s for test %s", fname, test_id)
+
+        if artifact_urls:
+            artifact_url = artifact_urls[0]
 
         final = TestStatus.PASSED if exit_code == 0 else TestStatus.FAILED
         _set_status(test_id, final, artifact_url=artifact_url)
@@ -294,8 +302,14 @@ def publish_heartbeat() -> None:
     try:
         engine = DockerEngine()
         live_count = engine.active_test_container_count()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to query Docker for active container count: %s. Using last known count.", e)
+        db_tmp = SessionLocal()
+        try:
+            cached_host = db_tmp.query(WorkerHost).filter_by(host_id=settings.worker_host_id).one_or_none()
+            live_count = cached_host.active_containers if cached_host else 0
+        finally:
+            db_tmp.close()
 
     db = SessionLocal()
     try:

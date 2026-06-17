@@ -80,16 +80,30 @@ class PytestRunner(Runner):
 
         Returns:
             str: The config directory path.
+
+        Raises:
+            ValueError: If timeout_seconds is not a positive integer.
         """
+        timeout_str = self.variables.get("timeout_seconds", "600")
+        try:
+            timeout_seconds = int(timeout_str)
+            if timeout_seconds <= 0:
+                raise ValueError("timeout_seconds must be positive")
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"Invalid timeout_seconds: {timeout_str}") from e
+
         cfg = {
             "markers": self.variables.get("markers", []),
             "target_dut": self.variables.get("target_dut", ""),
-            "timeout_seconds": int(self.variables.get("timeout_seconds", 600)),
+            "timeout_seconds": timeout_seconds,
             "extra_args": self.variables.get("extra_args", []),
         }
         out = os.path.join(self.config_dir, "pytest_config.json")
-        with open(out, "w", encoding="utf-8") as fh:
-            json.dump(cfg, fh, indent=2)
+        try:
+            with open(out, "w", encoding="utf-8") as fh:
+                json.dump(cfg, fh, indent=2)
+        except IOError as e:
+            raise RuntimeError(f"Failed to write config to {out}: {e}") from e
         return self.config_dir
 
 
@@ -105,13 +119,19 @@ class RobotRunner(Runner):
 
         Returns:
             str: The config directory path.
+
+        Raises:
+            RuntimeError: If the config file cannot be written.
         """
         lines = [f"--variable DUT:{self.variables.get('target_dut', '')}"]
         for tag in self.variables.get("include_tags", []):
             lines.append(f"--include {tag}")
         out = os.path.join(self.config_dir, "robot.args")
-        with open(out, "w", encoding="utf-8") as fh:
-            fh.write("\n".join(lines))
+        try:
+            with open(out, "w", encoding="utf-8") as fh:
+                fh.write("\n".join(lines))
+        except IOError as e:
+            raise RuntimeError(f"Failed to write config to {out}: {e}") from e
         return self.config_dir
 
 

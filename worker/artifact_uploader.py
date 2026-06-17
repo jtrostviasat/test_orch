@@ -7,12 +7,15 @@ TestExecution row for the dashboard's download link.
 """
 from __future__ import annotations
 
+import logging
 import os
 
 import requests
 
 from backend.config import get_settings
 from shared.validation import require_non_empty_str
+
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
@@ -47,5 +50,9 @@ def upload_artifact(test_id: str, file_path: str) -> str:
             headers={"Authorization": f"Bearer {settings.artifactory_token}"},
             timeout=120,
         )
-    resp.raise_for_status()
+    try:
+        resp.raise_for_status()
+    except requests.HTTPError as e:
+        logger.error("Artifactory upload failed for %s (%s): HTTP %s", test_id, file_path, resp.status_code)
+        raise
     return url

@@ -7,6 +7,7 @@ generator so the caller can fan lines out live while the container runs.
 """
 from __future__ import annotations
 
+import os
 from typing import Iterator
 
 import docker
@@ -45,7 +46,7 @@ class DockerEngine:
         """Create a Docker client bound to the configured rootless socket."""
         self._client = docker.DockerClient(base_url=settings.docker_host)
 
-    def start_test_container(self, image: str, config_dir: str, test_id: str):
+    def start_test_container(self, image: str, config_dir: str, test_id: str) -> docker.models.containers.Container:
         """
         Pull (if needed) and start a detached test container.
 
@@ -63,6 +64,8 @@ class DockerEngine:
         """
         require_non_empty_str(image, "image")
         require_non_empty_str(config_dir, "config_dir")
+        if not os.path.isdir(config_dir):
+            raise ValueError(f"config_dir is not a readable directory: {config_dir}")
         name = _container_name(test_id)
         return self._client.containers.run(
             image=image,
