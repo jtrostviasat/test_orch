@@ -45,5 +45,8 @@ celery_app.conf.beat_schedule = {
     },
 }
 
+# Store beat schedule in /tmp to avoid permission issues in rootless containers
+celery_app.conf.beat_schedule_filename = "/tmp/celerybeat-schedule"
+
 # Importing the tasks module registers the @celery_app.task functions.
 import worker.tasks  # noqa: E402,F401
