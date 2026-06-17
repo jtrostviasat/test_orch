@@ -119,6 +119,13 @@ def resolve_session(db: Session, token: str | None) -> User | None:
     if not token:
         return None
     sess = db.query(UserSession).filter_by(token=token).one_or_none()
-    if sess is None or sess.expires_at < dt.datetime.now(dt.timezone.utc):
+    if sess is None:
+        return None
+    # Tolerate a naive expiry (some DB backends drop tzinfo) by assuming UTC, so
+    # the comparison can never raise on offset-naive vs offset-aware datetimes.
+    expires_at = sess.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=dt.timezone.utc)
+    if expires_at < dt.datetime.now(dt.timezone.utc):
         return None
     return sess.user

@@ -44,3 +44,29 @@ def make_host():
     def _make(host_id: str, **kwargs) -> FakeHost:
         return FakeHost(host_id=host_id, **kwargs)
     return _make
+
+
+@pytest.fixture
+def db_session():
+    """
+    A real SQLAlchemy session backed by an in-memory SQLite database.
+
+    The ORM models are dialect-agnostic, so this exercises the actual queries
+    (filters, ``in_``, ``with_for_update`` — a no-op on SQLite) with zero network
+    or Postgres dependency. Tables are created fresh per test and torn down after.
+    """
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from backend import models  # noqa: F401 - registers tables on Base.metadata
+    from backend.database import Base
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    TestingSession = sessionmaker(bind=engine, expire_on_commit=False)
+    session = TestingSession()
+    try:
+        yield session
+    finally:
+        session.close()
+        engine.dispose()
