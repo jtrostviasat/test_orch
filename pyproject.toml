@@ -7,12 +7,47 @@ name = "test_orch"
 version = "0.1.0"
 description = "Multi-Tenant Embedded Test Automation & Orchestration System"
 requires-python = ">=3.12"
+# Runtime dependencies. Kept in sync with requirements.txt, which the Dockerfiles
+# use for layer-cached installs.
+dependencies = [
+    "fastapi==0.111.0",
+    "uvicorn[standard]==0.30.1",
+    "jinja2==3.1.4",
+    "python-multipart==0.0.9",
+    "pydantic==2.7.4",
+    "pydantic-settings==2.3.4",
+    "sqlalchemy==2.0.31",
+    "psycopg[binary]==3.2.1",
+    "celery==5.4.0",
+    "pika==1.3.2",
+    "aio-pika==9.4.1",
+    "influxdb-client==1.44.0",
+    "docker==7.1.0",
+    "ldap3==2.9.1",
+    "requests==2.32.3",
+    "psutil==6.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+]
+
+# Explicit package discovery so the editable build doesn't choke on the three
+# top-level packages (backend, worker, shared) in this flat layout. `tests` is
+# intentionally excluded — it is not an installable package.
+[tool.setuptools.packages.find]
+include = ["backend*", "worker*", "shared*"]
 
 [tool.pytest.ini_options]
 # Make the repo root importable so `import shared`, `import backend`, `import worker` work.
 pythonpath = ["."]
 testpaths = ["tests"]
 addopts = "-q"
+# Run async tests (e.g. the admin poll sentinel) without per-test markers.
+asyncio_mode = "auto"
 
 [tool.ruff]
 line-length = 100
