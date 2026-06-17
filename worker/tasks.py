@@ -288,9 +288,14 @@ def publish_heartbeat() -> None:
         None.
     """
     init_db()
-    engine = DockerEngine()
     stats = collect_host_stats(settings.worker_host_id, disk_path=settings.test_runs_dir)
-    live_count = engine.active_test_container_count()
+
+    live_count = 0
+    try:
+        engine = DockerEngine()
+        live_count = engine.active_test_container_count()
+    except Exception:
+        pass
 
     db = SessionLocal()
     try:
