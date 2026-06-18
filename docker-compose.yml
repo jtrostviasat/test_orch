@@ -80,25 +80,23 @@ services:
       POSTGRES_HOST: postgres
       RABBITMQ_HOST: rabbitmq
       INFLUX_URL: http://influxdb:8086
-      # Which Docker daemon the worker talks to. For standard (root) Docker set
-      # DOCKER_HOST=unix:///var/run/docker.sock in .env; for rootless keep the
-      # default. Must match DOCKER_HOST_SOCK below.
-      DOCKER_HOST: ${DOCKER_HOST:-unix:///run/user/1000/docker.sock}
+      # Which Docker daemon the worker talks to. Default = standard Docker.
+      # For rootless, set DOCKER_HOST=unix:///run/user/1000/docker.sock in .env.
+      # Must match DOCKER_HOST_SOCK below.
+      DOCKER_HOST: ${DOCKER_HOST:-unix:///var/run/docker.sock}
     volumes:
       # Bind-mount the Docker socket at the SAME path inside the container so the
-      # DOCKER_HOST URL resolves. Set DOCKER_HOST_SOCK in .env to your real
-      # socket (e.g. /var/run/docker.sock for standard Docker).
-      - ${DOCKER_HOST_SOCK:-/run/user/1000/docker.sock}:${DOCKER_HOST_SOCK:-/run/user/1000/docker.sock}
+      # DOCKER_HOST URL resolves. Default = standard Docker's /var/run/docker.sock.
+      - ${DOCKER_HOST_SOCK:-/var/run/docker.sock}:${DOCKER_HOST_SOCK:-/var/run/docker.sock}
       # Share the test-runs dir at the SAME path on host and worker. The worker
       # launches test containers via the host daemon, so the config/artifact
       # bind-mount paths it passes must resolve on the host too. Keep both sides
       # equal to TEST_RUNS_DIR (default /tmp/test_runs).
       - ${TEST_RUNS_DIR:-/tmp/test_runs}:${TEST_RUNS_DIR:-/tmp/test_runs}
-    # Grant the non-root worker (uid 1000) access to the host Docker socket's
-    # group. Set DOCKER_GID in .env to your host's docker group id
-    # (`getent group docker | cut -d: -f3`). Harmless for rootless setups.
-    group_add:
-      - "${DOCKER_GID:-999}"
+    # Run as root so the worker can use the standard Docker socket with no group
+    # setup. Simple dev default; for rootless/hardened setups set
+    # WORKER_USER=1000:1000 in .env (and ensure that uid can reach the socket).
+    user: "${WORKER_USER:-0:0}"
     depends_on:
       postgres:
         condition: service_healthy
