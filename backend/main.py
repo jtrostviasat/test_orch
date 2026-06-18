@@ -431,7 +431,7 @@ def update_host(
 # --------------------------------------------------------------------------- #
 # Live log streaming
 # --------------------------------------------------------------------------- #
-async def _consume_fanout(exchange_name, websocket, render, on_message=None):
+async def _consume_fanout(exchange_name, websocket, render, on_message=None, ready=None):
     """
     Bind a temp queue to a fanout exchange and stream messages to a WebSocket.
 
@@ -442,6 +442,9 @@ async def _consume_fanout(exchange_name, websocket, render, on_message=None):
             send (empty string suppresses the send).
         on_message: Optional async callable invoked once per message AFTER it is
             sent (used to bump the sentinel reply counter).
+        ready: Optional :class:`asyncio.Event` set once the queue is bound. The
+            caller awaits it before publishing so a single-shot fanout reply (the
+            admin host-status poll) can't be dropped before the queue exists.
 
     Returns:
         None. Runs until cancelled or the queue iterator ends.
@@ -458,6 +461,8 @@ async def _consume_fanout(exchange_name, websocket, render, on_message=None):
         )
         queue = await channel.declare_queue("", exclusive=True)
         await queue.bind(exchange)
+        if ready is not None:
+            ready.set()  # queue is now bound; safe to publish
         async with queue.iterator() as it:
             async for message in it:
                 async with message.process():
@@ -698,14 +703,24 @@ async def ws_admin(websocket: WebSocket):
                 """Suppress row rendering for superseded polls."""
                 return render_status_row(body) if _is_current() else ""
 
+            bound = asyncio.Event()
             consumer_task = asyncio.create_task(
                 _consume_fanout(
                     status_exchange_for(correlation_id),
                     websocket,
                     _guarded_render,
                     on_message=_guarded_on_reply,
+                    ready=bound,
                 )
             )
+
+            # Wait until the consumer's queue is actually bound before asking the
+            # workers to reply — otherwise a fast single-shot reply hits the
+            # fanout exchange with no queue and is dropped.
+            try:
+                await asyncio.wait_for(bound.wait(), timeout=5.0)
+            except asyncio.TimeoutError:
+                pass  # bind is slow/unreachable; dispatch anyway rather than hang
 
             for host_id in host_ids:
                 celery_client.send_task(
