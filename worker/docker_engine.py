@@ -87,7 +87,7 @@ class DockerEngine:
             image=image,
             name=name,
             detach=True,
-            network_mode="bridge",
+            network_mode=settings.docker_network_mode,
             volumes=volumes,
             labels={"managed-by": "test_orch", "test-id": test_id},
         )

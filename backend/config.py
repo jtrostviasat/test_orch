@@ -75,6 +75,10 @@ class Settings(BaseSettings):
     # --- Docker (rootless) ---
     docker_host: str = "unix:///run/user/1000/docker.sock"
     test_runs_dir: str = "/tmp/test_runs"
+    # Network mode for spawned test containers. Spec §C wants "host" (or explicit
+    # corporate DNS) so the container can reach the Quali CloudShell API. Default
+    # is "bridge" for isolated local testing; set to "host" in the corporate net.
+    docker_network_mode: str = "bridge"
 
     @property
     def sqlalchemy_url(self) -> str:

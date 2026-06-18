@@ -41,6 +41,10 @@ from worker.translation_layer import get_runner
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
+# Write a relational LogLine index row every N streamed lines (full history lives
+# in InfluxDB). Keeps Postgres write volume bounded on chatty test output.
+LOG_CHECKPOINT_EVERY = 25
+
 
 # --------------------------------------------------------------------------- #
 # Internal AMQP publish helpers (synchronous; tasks are sync Celery workers)
@@ -217,13 +221,15 @@ def run_test_bundle(self, bundle: Dict[str, Any]) -> str:
         try:
             from backend.models import LogLine
 
+            # InfluxDB holds the FULL line-by-line history; Postgres keeps only a
+            # sparse relational index (a checkpoint every N lines) so the history
+            # page can seek without us writing a row per line on the hot path.
             for line_no, line in enumerate(DockerEngine.stream_logs(container)):
-                influx.write_line(test_id, line_no, line)
-                db.add(LogLine(test_id=test_id, line_no=line_no, content=line))
-                if line_no % 25 == 0:
+                influx.write_line(test_id, line_no, line)   # full history
+                _publish_log_line(test_id, line)            # live stream
+                if line_no % LOG_CHECKPOINT_EVERY == 0:     # sparse PG index
+                    db.add(LogLine(test_id=test_id, line_no=line_no, content=line))
                     db.commit()
-                _publish_log_line(test_id, line)
-            db.commit()
         finally:
             db.close()
 
