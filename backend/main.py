@@ -698,6 +698,9 @@ async def ws_admin(websocket: WebSocket):
                 """Count + render a reply only if this poll is still current."""
                 if _is_current():
                     await state.on_reply()
+                    logger.info(
+                        "admin poll %s: reply %d/%d", correlation_id, state.received, total
+                    )
 
             def _guarded_render(body: str) -> str:
                 """Suppress row rendering for superseded polls."""
@@ -728,6 +731,10 @@ async def ws_admin(websocket: WebSocket):
                     args=[correlation_id],
                     queue=queue_name_for(host_id),
                 )
+            logger.info(
+                "admin poll %s: dispatched to %d host(s) %s (queue bound=%s)",
+                correlation_id, total, host_ids, bound.is_set(),
+            )
 
             sentinel_task = asyncio.create_task(
                 _emit_sentinel_after_grace(
