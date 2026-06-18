@@ -85,6 +85,11 @@ services:
       # Bind-mount the rootless Docker socket so the worker can launch test
       # containers. Adjust the host path to match your UID's socket.
       - ${DOCKER_HOST_SOCK:-/run/user/1000/docker.sock}:/run/user/1000/docker.sock
+      # Share the test-runs dir at the SAME path on host and worker. The worker
+      # launches test containers via the host daemon, so the config/artifact
+      # bind-mount paths it passes must resolve on the host too. Keep both sides
+      # equal to TEST_RUNS_DIR (default /tmp/test_runs).
+      - ${TEST_RUNS_DIR:-/tmp/test_runs}:${TEST_RUNS_DIR:-/tmp/test_runs}
     depends_on:
       postgres:
         condition: service_healthy

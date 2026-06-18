@@ -279,6 +279,42 @@ def submit_test(
     return RedirectResponse("/", status_code=302)
 
 
+@app.get("/tests/{test_id}", response_class=HTMLResponse)
+def test_logs_page(
+    test_id: str,
+    request: Request,
+    user: User | None = Depends(current_user),
+) -> HTMLResponse:
+    """
+    Render the live-log terminal for a single test run.
+
+    The page opens a WebSocket to ``/ws/logs/{test_id}``; the worker's streamed
+    container output is appended to the terminal as it arrives. Only the run's
+    owner may view it.
+
+    Args:
+        test_id: The test whose logs to view.
+        request: The incoming HTTP request.
+        user: The resolved current user, if any.
+
+    Returns:
+        HTMLResponse: The log page, or a redirect to ``/login``/``/`` when the
+        user is unauthenticated or not the run's owner.
+    """
+    if user is None:
+        return RedirectResponse("/login", status_code=302)
+    db = SessionLocal()
+    try:
+        run = db.query(TestExecution).filter_by(test_id=test_id).one_or_none()
+    finally:
+        db.close()
+    if run is None or run.user_id != user.id:
+        return RedirectResponse("/", status_code=302)
+    return templates.TemplateResponse(
+        "test_logs.html", {"request": request, "user": user, "run": run}
+    )
+
+
 @app.get("/login", response_class=HTMLResponse)
 def login_form(request: Request) -> HTMLResponse:
     """
@@ -350,6 +386,48 @@ def admin(request: Request, user: User | None = Depends(current_user)) -> HTMLRe
     )
 
 
+@app.post("/admin/hosts")
+def update_host(
+    host_id: str = Form(...),
+    hardware_tags: str = Form(""),
+    supports_emulation: bool = Form(False),
+    max_containers: int = Form(10),
+    user: User | None = Depends(current_user),
+):
+    """
+    Update a worker host's scheduling capabilities from the admin panel.
+
+    Lets an admin set the hardware tags, emulation support, and container cap that
+    the filter-and-rank scheduler uses — without these, auto-registered hosts can
+    never match a tagged or emulation-requiring bundle.
+
+    Args:
+        host_id: The host to update (must already exist in the inventory).
+        hardware_tags: Comma-separated tags (e.g. ``"DUT_TYPE_A,DUT_TYPE_B"``).
+        supports_emulation: Whether the host can run emulation jobs.
+        max_containers: Maximum concurrent containers the host accepts.
+        user: The resolved current user.
+
+    Returns:
+        Response: Redirect back to ``/admin`` (or ``/login`` if unauthenticated).
+    """
+    if user is None:
+        return RedirectResponse("/login", status_code=302)
+
+    normalized = ",".join(t.strip() for t in hardware_tags.split(",") if t.strip())
+    db = SessionLocal()
+    try:
+        host = db.query(WorkerHost).filter_by(host_id=host_id).one_or_none()
+        if host is not None:
+            host.hardware_tags = normalized
+            host.supports_emulation = supports_emulation
+            host.max_containers = max(1, max_containers)
+            db.commit()
+    finally:
+        db.close()
+    return RedirectResponse("/admin", status_code=302)
+
+
 # --------------------------------------------------------------------------- #
 # Live log streaming
 # --------------------------------------------------------------------------- #
@@ -407,10 +485,30 @@ async def ws_logs(websocket: WebSocket, test_id: str):
         cancelled on exit.
 
     Note:
-        If the consumer task dies (e.g. broker outage) it is detected via
-        ``done()`` and the socket is closed rather than hanging open silently.
+        Requires a valid session cookie (closes 4401 otherwise) and only streams
+        logs for a test the requester owns (closes 4403 otherwise). If the
+        consumer task dies (e.g. broker outage) it is detected via ``done()`` and
+        the socket is closed rather than hanging open silently.
     """
     await websocket.accept()
+
+    db = SessionLocal()
+    try:
+        user = resolve_session(db, websocket.cookies.get("session_token"))
+        owner_id = None
+        if user is not None:
+            row = db.query(TestExecution).filter_by(test_id=test_id).one_or_none()
+            owner_id = row.user_id if row is not None else None
+    finally:
+        db.close()
+    if user is None:
+        await websocket.close(code=4401)
+        return
+    # Deny only when the test exists AND belongs to someone else; an unknown
+    # test_id is allowed (the row may not be persisted yet) for any logged-in user.
+    if owner_id is not None and owner_id != user.id:
+        await websocket.close(code=4403)
+        return
 
     def render(line: str) -> str:
         return (

@@ -39,7 +39,7 @@
       <tbody>
         {% for run in runs %}
         <tr>
-          <td>{{ run.test_id }}</td>
+          <td><a href="/tests/{{ run.test_id }}">{{ run.test_id }}</a></td>
           <td>{{ run.runner_type }}</td>
           <td>{{ run.status }}</td>
           <td>{{ run.target_host_id or "-" }}</td>

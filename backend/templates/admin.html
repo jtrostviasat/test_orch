@@ -32,6 +32,37 @@
     </table>
   </div>
 
+  <div class="panel">
+    <h2>Edit Host Capabilities</h2>
+    <p style="color:#8b949e; font-size:13px;">
+      Set the tags / emulation / capacity the scheduler uses to place tests.
+      Values overwrite the selected host's current settings.
+    </p>
+    <form method="post" action="/admin/hosts">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; max-width:720px;">
+        <label>Host
+          <select name="host_id" required style="width:100%; padding:6px;">
+            {% for h in hosts %}
+            <option value="{{ h.host_id }}">{{ h.host_id }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Max containers
+          <input type="number" name="max_containers" min="1" value="10"
+                 style="width:100%; padding:6px;" />
+        </label>
+        <label>Hardware tags
+          <input name="hardware_tags" placeholder="DUT_TYPE_A,DUT_TYPE_B"
+                 style="width:100%; padding:6px;" />
+        </label>
+      </div>
+      <label style="display:block; margin:12px 0;">
+        <input type="checkbox" name="supports_emulation" value="true" /> Supports emulation
+      </label>
+      <button type="submit">Save Host</button>
+    </form>
+  </div>
+
   <!--
     Live Host Status.
     The form connects to /ws/admin over a WebSocket (htmx ws extension). Clicking

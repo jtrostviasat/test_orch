@@ -202,8 +202,15 @@ def run_test_bundle(self, bundle: Dict[str, Any]) -> str:
     try:
         runner = get_runner(req.runner_type, test_id, req.runner_variables)
         config_dir = runner.write_config()
+        # Writable directory the test container writes result files into
+        # (mounted rw at /artifacts); scanned for upload after the run.
+        output_dir = os.path.join(settings.test_runs_dir, test_id, "artifacts")
+        os.makedirs(output_dir, exist_ok=True)
         container = engine.start_test_container(
-            image=req.framework_image, config_dir=config_dir, test_id=test_id
+            image=req.framework_image,
+            config_dir=config_dir,
+            test_id=test_id,
+            output_dir=output_dir,
         )
 
         db = SessionLocal()
@@ -224,10 +231,10 @@ def run_test_bundle(self, bundle: Dict[str, Any]) -> str:
 
         artifact_url = None
         artifact_urls = []
-        for fname in os.listdir(config_dir):
+        for fname in os.listdir(output_dir):
             if fname.endswith((".log", ".dmp", ".core", ".tar.gz")):
                 try:
-                    url = upload_artifact(test_id, os.path.join(config_dir, fname))
+                    url = upload_artifact(test_id, os.path.join(output_dir, fname))
                     artifact_urls.append(url)
                 except Exception:
                     logger.exception("Failed to upload artifact %s for test %s", fname, test_id)

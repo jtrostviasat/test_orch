@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Logs {{ run.test_id }} - test_orch{% endblock %}
+{% block content %}
+  <h1>Live Logs</h1>
+  <div class="panel">
+    <p style="color:#8b949e; font-size:13px;">
+      Test <strong>{{ run.test_id }}</strong> &middot; runner {{ run.runner_type }}
+      &middot; status <strong>{{ run.status }}</strong>
+      &middot; host {{ run.target_host_id or "-" }}
+    </p>
+    <!--
+      The htmx ws extension opens /ws/logs/{test_id}. The worker streams each
+      container stdout line to a fanout exchange; the backend pushes them here as
+      out-of-band appends into #terminal.
+    -->
+    <div hx-ext="ws" ws-connect="/ws/logs/{{ run.test_id }}">
+      <div id="terminal"></div>
+    </div>
+  </div>
+  <a href="/">&larr; Back to dashboard</a>
+{% endblock %}

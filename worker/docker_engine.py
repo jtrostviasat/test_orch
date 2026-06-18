@@ -46,7 +46,13 @@ class DockerEngine:
         """Create a Docker client bound to the configured rootless socket."""
         self._client = docker.DockerClient(base_url=settings.docker_host)
 
-    def start_test_container(self, image: str, config_dir: str, test_id: str) -> docker.models.containers.Container:
+    def start_test_container(
+        self,
+        image: str,
+        config_dir: str,
+        test_id: str,
+        output_dir: str | None = None,
+    ) -> docker.models.containers.Container:
         """
         Pull (if needed) and start a detached test container.
 
@@ -54,6 +60,9 @@ class DockerEngine:
             image: Fully-qualified framework image reference.
             config_dir: Host directory mounted read-only at ``/config``.
             test_id: The test identifier (names the container).
+            output_dir: Optional host directory mounted read-write at
+                ``/artifacts`` for the test to write result files (logs, dumps)
+                that the worker then collects and uploads.
 
         Returns:
             docker.models.containers.Container: The started container handle.
@@ -66,13 +75,20 @@ class DockerEngine:
         require_non_empty_str(config_dir, "config_dir")
         if not os.path.isdir(config_dir):
             raise ValueError(f"config_dir is not a readable directory: {config_dir}")
+
+        volumes = {config_dir: {"bind": "/config", "mode": "ro"}}
+        if output_dir:
+            if not os.path.isdir(output_dir):
+                raise ValueError(f"output_dir is not a readable directory: {output_dir}")
+            volumes[output_dir] = {"bind": "/artifacts", "mode": "rw"}
+
         name = _container_name(test_id)
         return self._client.containers.run(
             image=image,
             name=name,
             detach=True,
             network_mode="bridge",
-            volumes={config_dir: {"bind": "/config", "mode": "ro"}},
+            volumes=volumes,
             labels={"managed-by": "test_orch", "test-id": test_id},
         )
 

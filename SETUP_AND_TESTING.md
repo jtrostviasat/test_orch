@@ -274,3 +274,60 @@ another machine:
 Each worker consumes its own `queue_<WORKER_HOST_ID>`; the backend's
 filter-and-rank scheduler dispatches to the right queue automatically, and the
 admin poll will list every host that responds.
+
+---
+
+## MVP: run a test and watch its logs stream live
+
+This exercises the full path: submit → filter-and-rank dispatch → container run →
+stdout streamed to InfluxDB + a RabbitMQ fanout → WebSocket → live terminal.
+
+### 1. Build the demo test image (on the worker host)
+
+The worker launches a container from the image you name, so it must exist in the
+host's rootless Docker daemon. A throwaway "test" image is provided that prints a
+random INFO log line to stdout (and to `/artifacts/run.log`) every 10s for ~1 min:
+
+```bash
+./examples/mvp-test/build.sh        # builds mvp-test:latest
+```
+
+### 2. Log in
+
+Use the cookie shortcut (`./setup_admin_user.sh`, then set the `session_token`
+cookie) or a real LDAP login. See Step 4 above.
+
+### 3. Submit a test
+
+On the **Dashboard** ("Submit a Test" panel):
+
+- **Runner:** `pytest` (the demo image ignores the rendered config)
+- **Framework image:** `mvp-test:latest`
+- Leave tags/emulation empty.
+- Click **Dispatch Test**.
+
+The scheduler picks the least-loaded qualifying host (your `worker_host_01`),
+reserves a slot, and enqueues the run. A new row appears in **My Test Runs** with
+status `DISPATCHED` → `RUNNING`.
+
+### 4. Watch the logs
+
+Click the **test id** in the runs table. The log page opens a WebSocket to
+`/ws/logs/<test_id>` and appends each line as it arrives — you'll see a new line
+roughly every 10 seconds, finishing with `=== MVP test complete: PASSED ===`
+after ~1 minute. The run then flips to `PASSED` (refresh the dashboard).
+
+> The streamed lines come from the container's stdout. The same lines are also
+> written to InfluxDB (permanent history) and to `/artifacts/run.log` inside the
+> per-test artifacts mount on the worker
+> (`<TEST_RUNS_DIR>/<test_id>/artifacts/run.log`). Artifact upload to Artifactory
+> is attempted only if a real Artifactory is configured; without one it is logged
+> and skipped — the run still passes.
+
+### Troubleshooting
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| Run goes straight to `FAILED` | Image not found / no host qualified | Confirm `mvp-test:latest` is built on the host; confirm a `worker_host_01` row exists and is online |
+| Log page shows nothing | WebSocket/broker issue, or not the run's owner | DevTools → Network → WS: confirm `/ws/logs/...` is `101`; the viewer must be the user who submitted the run |
+| `4401`/`4403` on the log socket | Not logged in / not the owner | Re-do login; only the submitting user can view a run's logs |
