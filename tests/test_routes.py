@@ -66,7 +66,9 @@ def _login(env, username: str = "tester") -> int:
     ))
     s.commit()
     s.close()
-    env.client.cookies.set("session_token", token, domain="testserver")
+    # Set as a default header rather than via the cookie jar: httpx/http.cookiejar
+    # won't reliably attach a cookie whose domain is the dot-less "testserver".
+    env.client.headers["Cookie"] = f"session_token={token}"
     return uid
 
 
